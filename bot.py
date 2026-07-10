@@ -101,7 +101,7 @@ def download_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [InlineKeyboardButton("\U0001F4E6 Download File", url=get_mediafire_url())],
-            [InlineKeyboardButton("\U0001F310 Open Website", url=get_website_url())],
+            [InlineKeyboardButton("📂 Open File", url=get_website_url())],
         ]
     )
 

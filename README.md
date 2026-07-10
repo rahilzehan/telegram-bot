@@ -20,7 +20,7 @@ Built with [python-telegram-bot](https://python-telegram-bot.org/) (v21, async).
   restart.
 - **Content unlock flow** - after verification the bot shows `Unlock Download`
   (opens the shortener), then `I Completed`, then `Download File` and
-  `Open Website`.
+  `📂 Open File`.
 - **Admin tools** - update URLs, manage channels, view statistics, and
   broadcast a message to all users.
 - **Local JSON storage** - users, statistics and settings are stored in

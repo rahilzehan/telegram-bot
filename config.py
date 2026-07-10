@@ -48,7 +48,7 @@ ADMIN_USERNAME = _require("ADMIN_USERNAME").lstrip("@")
 # Shortener URL opened by the "Unlock Download" button.
 SHORTENER_URL = _require("SHORTENER_URL")
 
-# Website opened by the "Open Website" button.
+# Website opened by the "📂 Open File" button.
 WEBSITE_URL = _require("WEBSITE_URL")
 
 # Direct file download (MediaFire or similar) opened by "Download File".
