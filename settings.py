@@ -34,6 +34,7 @@ def _defaults() -> dict:
         "website_url": WEBSITE_URL,
         "shortener_url": SHORTENER_URL,
         "channels": [dict(ch) for ch in DEFAULT_CHANNELS],
+        "files": [],
     }
 
 
@@ -82,6 +83,57 @@ def _save_value(key: str, value) -> None:
         data = _load()
         data[key] = value
         _atomic_write(data)
+
+
+# --------------------------------------------------------------------------- #
+# URL getters / setters
+# --------------------------------------------------------------------------- #
+# File management
+# --------------------------------------------------------------------------- #
+def get_files() -> list:
+    """Return the current list of downloadable files."""
+    return [dict(f) for f in _load().get("files", [])]
+
+
+def add_file(file_id: int, name: str, url: str) -> bool:
+    """Add a file. Returns False if a file with that id already exists."""
+    with _lock:
+        data = _load()
+        files = data.get("files", [])
+        if any(f["id"] == file_id for f in files):
+            return False
+        files.append({"id": file_id, "name": name, "url": url})
+        data["files"] = files
+        _atomic_write(data)
+        return True
+
+
+def edit_file(file_id: int, new_url: str, new_name: str) -> bool:
+    """Edit an existing file. Returns False if no matching file was found."""
+    with _lock:
+        data = _load()
+        files = data.get("files", [])
+        for f_item in files:
+            if f_item["id"] == file_id:
+                f_item["url"] = new_url
+                f_item["name"] = new_name
+                data["files"] = files
+                _atomic_write(data)
+                return True
+        return False
+
+
+def remove_file(file_id: int) -> bool:
+    """Remove a file by id. Returns False if no matching file was found."""
+    with _lock:
+        data = _load()
+        files = data.get("files", [])
+        remaining = [f_item for f_item in files if f_item["id"] != file_id]
+        if len(remaining) == len(files):
+            return False
+        data["files"] = remaining
+        _atomic_write(data)
+        return True
 
 
 # --------------------------------------------------------------------------- #

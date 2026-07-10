@@ -31,11 +31,15 @@ from telegram.ext import (
 from config import ADMIN_USERNAME, BOT_TOKEN, WELCOME_TEXT
 from settings import (
     add_channel,
+    add_file,
+    edit_file,
     get_channels,
+    get_files,
     get_mediafire_url,
     get_shortener_url,
     get_website_url,
     remove_channel,
+    remove_file,
     set_mediafire_url,
     set_shortener_url,
     set_website_url,
@@ -98,12 +102,18 @@ def unlock_keyboard() -> InlineKeyboardMarkup:
 
 def download_keyboard() -> InlineKeyboardMarkup:
     """Final download buttons shown after the user completes the shortener."""
-    return InlineKeyboardMarkup(
-        [
-            [InlineKeyboardButton("\U0001F4E6 Download File", url=get_mediafire_url())],
-            [InlineKeyboardButton("📂 Open File", url=get_website_url())],
-        ]
-    )
+    files = get_files()
+    if not files:
+        return InlineKeyboardMarkup(
+            [
+                [InlineKeyboardButton("No files available", callback_data="no_files")]
+            ]
+        )
+
+    keyboard = [
+        [InlineKeyboardButton(f"{file["name"]}", url=file["url"])] for file in files
+    ]
+    return InlineKeyboardMarkup(keyboard)
 
 
 # --------------------------------------------------------------------------- #
@@ -226,6 +236,86 @@ async def setshortener(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
     set_shortener_url(context.args[0])
     await update.message.reply_text(f"\u2705 Shortener URL updated to:\n{context.args[0]}")
+
+
+async def addfile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/addfile <url> <button name> - Add a downloadable file."""
+    if not _is_admin(update):
+        return await _deny(update)
+    if len(context.args) < 2:
+        await update.message.reply_text("Usage: /addfile <url> <button name>")
+        return
+    file_url = context.args[0]
+    button_name = " ".join(context.args[1:])
+    # Generate a unique ID. Simple increment for now, could be UUID in future.
+    files = get_files()
+    file_ids = [f["id"] for f in files]
+    new_id = 1
+    while new_id in file_ids:
+        new_id += 1
+
+    if add_file(new_id, button_name, file_url):
+        await update.message.reply_text(
+            f"\u2705 File added successfully.\nID: {new_id}\nName: {button_name}"
+        )
+    else:
+        await update.message.reply_text("\u26A0\uFE0F Failed to add file (duplicate ID or other error).")
+
+
+async def editfile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/editfile <id> <new_url> <new_button_name> - Edit an existing file."""
+    if not _is_admin(update):
+        return await _deny(update)
+    if len(context.args) < 3:
+        await update.message.reply_text("Usage: /editfile <id> <new_url> <new_button_name>")
+        return
+    try:
+        file_id = int(context.args[0])
+    except ValueError:
+        await update.message.reply_text("Invalid file ID. Must be a number.")
+        return
+    new_url = context.args[1]
+    new_button_name = " ".join(context.args[2:])
+    if edit_file(file_id, new_url, new_button_name):
+        await update.message.reply_text("\u2705 File updated successfully.")
+    else:
+        await update.message.reply_text(f"\u26A0\uFE0F No file found with ID {file_id}.")
+
+
+async def removefile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/removefile <id> - Remove a downloadable file."""
+    if not _is_admin(update):
+        return await _deny(update)
+    if not context.args:
+        await update.message.reply_text("Usage: /removefile <id>")
+        return
+    try:
+        file_id = int(context.args[0])
+    except ValueError:
+        await update.message.reply_text("Invalid file ID. Must be a number.")
+        return
+    if remove_file(file_id):
+        await update.message.reply_text("\u2705 File removed successfully.")
+    else:
+        await update.message.reply_text(f"\u26A0\uFE0F No file found with ID {file_id}.")
+
+
+async def listfiles(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/listfiles - Display all downloadable files."""
+    if not _is_admin(update):
+        return await _deny(update)
+    files = get_files()
+    if not files:
+        await update.message.reply_text("No downloadable files configured.")
+        return
+    lines = [
+        f"{file["id"]}. {file["name"]}"
+        for file in files
+    ]
+    await update.message.reply_text(
+        "\U0001F4CB *Downloadable Files*\n\n" + "\n".join(lines),
+        parse_mode=ParseMode.MARKDOWN,
+    )
 
 
 async def addchannel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -359,6 +449,10 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("setfile", setfile))
     application.add_handler(CommandHandler("setwebsite", setwebsite))
     application.add_handler(CommandHandler("setshortener", setshortener))
+    application.add_handler(CommandHandler("addfile", addfile))
+    application.add_handler(CommandHandler("editfile", editfile))
+    application.add_handler(CommandHandler("removefile", removefile))
+    application.add_handler(CommandHandler("listfiles", listfiles))
     application.add_handler(CommandHandler("addchannel", addchannel))
     application.add_handler(CommandHandler("removechannel", removechannel))
     application.add_handler(CommandHandler("listchannels", listchannels))
@@ -369,6 +463,7 @@ def build_application() -> Application:
     # Callback queries.
     application.add_handler(CallbackQueryHandler(verify, pattern=f"^{CB_VERIFY}$"))
     application.add_handler(CallbackQueryHandler(completed, pattern=f"^{CB_COMPLETED}$"))
+    application.add_handler(CallbackQueryHandler(lambda update, context: None, pattern=f"^no_files$")) # Ignore "No files available" button
 
     # Admin free-text handler (used for broadcasting). Must come last.
     application.add_handler(
