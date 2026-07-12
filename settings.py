@@ -1,12 +1,12 @@
 """Runtime, editable settings for the Content Unlock Bot.
 
-URLs (file/website/shortener) and the list of required channels live here
+The list of required channels and downloadable files live here
 rather than in code, so admin commands can change them live without editing
 source or restarting the bot. Everything is persisted to settings.json and
 reloaded on every read, guaranteeing changes take effect immediately.
 
-On first run (or whenever a key is missing) the store is seeded from the
-values in config.py, which in turn come from .env.
+On first run the store is seeded with empty channels and files lists.
+Channels are managed only via /addchannel and /removechannel commands.
 """
 
 import json
@@ -15,13 +15,7 @@ import os
 import tempfile
 import threading
 
-from config import (
-    DEFAULT_CHANNELS,
-    MEDIAFIRE_URL,
-    SETTINGS_FILE,
-    SHORTENER_URL,
-    WEBSITE_URL,
-)
+from config import SETTINGS_FILE
 
 logger = logging.getLogger(__name__)
 
@@ -29,11 +23,9 @@ _lock = threading.RLock()
 
 
 def _defaults() -> dict:
+    """Return default values for settings - empty channels and files."""
     return {
-        "mediafire_url": MEDIAFIRE_URL,
-        "website_url": WEBSITE_URL,
-        "shortener_url": SHORTENER_URL,
-        "channels": [dict(ch) for ch in DEFAULT_CHANNELS],
+        "channels": [],
         "files": [],
     }
 
@@ -70,7 +62,7 @@ def _load() -> dict:
         defaults = _defaults()
         changed = False
         for key, value in defaults.items():
-            if key not in data or data[key] in (None, ""):
+            if key not in data:
                 data[key] = value
                 changed = True
         if changed:
@@ -86,8 +78,6 @@ def _save_value(key: str, value) -> None:
 
 
 # --------------------------------------------------------------------------- #
-# URL getters / setters
-# --------------------------------------------------------------------------- #
 # File management
 # --------------------------------------------------------------------------- #
 def get_files() -> list:
@@ -95,21 +85,38 @@ def get_files() -> list:
     return [dict(f) for f in _load().get("files", [])]
 
 
-def add_file(file_id: int, name: str, url: str) -> bool:
-    """Add a file. Returns False if a file with that id already exists."""
+def add_file(file_id: int, name: str, url: str, thumbnail: str = None) -> bool:
+    """Add a file. Returns False if a file with that id already exists.
+    
+    Args:
+        file_id: Unique identifier for the file
+        name: Button display name
+        url: Download URL
+        thumbnail: Optional Telegram file_id of a thumbnail image
+    """
     with _lock:
         data = _load()
         files = data.get("files", [])
         if any(f["id"] == file_id for f in files):
             return False
-        files.append({"id": file_id, "name": name, "url": url})
+        file_data = {"id": file_id, "name": name, "url": url}
+        if thumbnail:
+            file_data["thumbnail"] = thumbnail
+        files.append(file_data)
         data["files"] = files
         _atomic_write(data)
         return True
 
 
-def edit_file(file_id: int, new_url: str, new_name: str) -> bool:
-    """Edit an existing file. Returns False if no matching file was found."""
+def edit_file(file_id: int, new_url: str, new_name: str, new_thumbnail: str = None) -> bool:
+    """Edit an existing file. Returns False if no matching file was found.
+    
+    Args:
+        file_id: File to edit
+        new_url: New download URL
+        new_name: New button display name
+        new_thumbnail: Optional new thumbnail file_id (set to empty string to remove)
+    """
     with _lock:
         data = _load()
         files = data.get("files", [])
@@ -117,6 +124,11 @@ def edit_file(file_id: int, new_url: str, new_name: str) -> bool:
             if f_item["id"] == file_id:
                 f_item["url"] = new_url
                 f_item["name"] = new_name
+                if new_thumbnail is not None:
+                    if new_thumbnail:
+                        f_item["thumbnail"] = new_thumbnail
+                    elif "thumbnail" in f_item:
+                        del f_item["thumbnail"]
                 data["files"] = files
                 _atomic_write(data)
                 return True
@@ -136,31 +148,26 @@ def remove_file(file_id: int) -> bool:
         return True
 
 
-# --------------------------------------------------------------------------- #
-# URL getters / setters
-# --------------------------------------------------------------------------- #
-def get_mediafire_url() -> str:
-    return _load()["mediafire_url"]
-
-
-def get_website_url() -> str:
-    return _load()["website_url"]
-
-
-def get_shortener_url() -> str:
-    return _load()["shortener_url"]
-
-
-def set_mediafire_url(url: str) -> None:
-    _save_value("mediafire_url", url)
-
-
-def set_website_url(url: str) -> None:
-    _save_value("website_url", url)
-
-
-def set_shortener_url(url: str) -> None:
-    _save_value("shortener_url", url)
+def set_file_thumbnail(file_id: int, thumbnail: str) -> bool:
+    """Set or update a file's thumbnail. Returns False if file not found.
+    
+    Args:
+        file_id: File to update
+        thumbnail: Telegram file_id of the thumbnail (empty string to remove)
+    """
+    with _lock:
+        data = _load()
+        files = data.get("files", [])
+        for f_item in files:
+            if f_item["id"] == file_id:
+                if thumbnail:
+                    f_item["thumbnail"] = thumbnail
+                elif "thumbnail" in f_item:
+                    del f_item["thumbnail"]
+                data["files"] = files
+                _atomic_write(data)
+                return True
+        return False
 
 
 # --------------------------------------------------------------------------- #
