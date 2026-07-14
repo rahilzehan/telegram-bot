@@ -113,7 +113,7 @@ def join_channels_keyboard() -> InlineKeyboardMarkup:
 
 def download_keyboard(exclude_thumbnail_files: bool = False) -> InlineKeyboardMarkup:
     """Final download buttons shown after successful verification.
-    
+
     Args:
         exclude_thumbnail_files: If True, exclude files that have thumbnails
                                  (they'll be sent separately with the photo)
@@ -121,7 +121,7 @@ def download_keyboard(exclude_thumbnail_files: bool = False) -> InlineKeyboardMa
     files = get_files()
     if exclude_thumbnail_files:
         files = [f for f in files if not f.get('thumbnail')]
-    
+
     if not files:
         if exclude_thumbnail_files:
             return None  # No files without thumbnails
@@ -131,9 +131,22 @@ def download_keyboard(exclude_thumbnail_files: bool = False) -> InlineKeyboardMa
             ]
         )
 
-    keyboard = [
-        [InlineKeyboardButton(f"{file['name']}", url=file["url"])] for file in files
-    ]
+    keyboard = []
+    # Group files by upload_date, preserving insertion order
+    groups: dict[str, list] = {}
+    for file in files:
+        date_key = file.get("upload_date", "")
+        groups.setdefault(date_key, []).append(file)
+
+    for date_key in groups:
+        if date_key:
+            keyboard.append(
+                [InlineKeyboardButton(f"📅 {date_key}", callback_data="noop")]
+            )
+        for file in groups[date_key]:
+            keyboard.append(
+                [InlineKeyboardButton(f"⬇️ {file['name']}", url=file["url"])]
+            )
     return InlineKeyboardMarkup(keyboard)
 
 
@@ -355,39 +368,18 @@ async def verify(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     set_verified(user.id, True)
     record_unlock_request(user.id)
     logger.info("User %s verified successfully", user.id)
-    
-    # Send files with thumbnails first
-    files_with_thumbnails = [f for f in get_files() if f.get('thumbnail')]
-    for file in files_with_thumbnails:
-        caption = f"*{file['name']}*"
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton(f"⬇️ Download {file['name']}", url=file["url"])]
-        ])
-        await query.message.reply_photo(
-            photo=file['thumbnail'],
-            caption=caption,
+
+    # Replace the old message with a clean download screen
+    keyboard = download_keyboard()
+    if keyboard:
+        await query.message.edit_text(
+            " *Your Downloads*",
             reply_markup=keyboard,
             parse_mode=ParseMode.MARKDOWN,
         )
-    
-    # Send remaining files without thumbnails as buttons
-    keyboard_no_thumb = download_keyboard(exclude_thumbnail_files=True)
-    if keyboard_no_thumb:
-        await query.message.reply_text(
-            " *Your Downloads*",
-            reply_markup=keyboard_no_thumb,
-            parse_mode=ParseMode.MARKDOWN,
-        )
-    elif not files_with_thumbnails:
-        # No files at all
-        await query.message.reply_text(
-            " *Verified!*\n\nNo files available.",
-            parse_mode=ParseMode.MARKDOWN,
-        )
     else:
-        # Only thumbnails, add intro message
-        await query.message.reply_text(
-            " *Verified!*\n\nHere are your downloads:",
+        await query.message.edit_text(
+            " *Verified!*\n\nNo files available.",
             parse_mode=ParseMode.MARKDOWN,
         )
 
@@ -398,30 +390,16 @@ async def completed(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle the 'I Completed' button (legacy)."""
     query = update.callback_query
     await query.answer()
-    # Send files with thumbnails first
-    files_with_thumbnails = [f for f in get_files() if f.get('thumbnail')]
-    for file in files_with_thumbnails:
-        caption = f"*{file['name']}*"
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton(f"⬇️ Download {file['name']}", url=file["url"])]
-        ])
-        await query.message.reply_photo(
-            photo=file['thumbnail'],
-            caption=caption,
+
+    # Show all files as inline keyboard buttons with download URLs
+    keyboard = download_keyboard()
+    if keyboard:
+        await query.message.reply_text(
+            "\U0001F389 *Here is your download!*",
             reply_markup=keyboard,
             parse_mode=ParseMode.MARKDOWN,
         )
-    
-    # Send remaining files without thumbnails as buttons
-    keyboard_no_thumb = download_keyboard(exclude_thumbnail_files=True)
-    if keyboard_no_thumb:
-        await query.message.reply_text(
-            "\U0001F389 *Here is your download!*",
-            reply_markup=keyboard_no_thumb,
-            parse_mode=ParseMode.MARKDOWN,
-        )
-    elif not files_with_thumbnails:
-        # No files at all
+    else:
         await query.message.reply_text(
             "\U0001F389 *Here is your download!*\n\nNo files available.",
             parse_mode=ParseMode.MARKDOWN,
@@ -1000,6 +978,7 @@ def build_application() -> Application:
     application.add_handler(CallbackQueryHandler(verify, pattern=f"^{CB_VERIFY}$"))
     application.add_handler(CallbackQueryHandler(completed, pattern=f"^{CB_COMPLETED}$"))
     application.add_handler(CallbackQueryHandler(lambda update, context: None, pattern=f"^no_files$")) # Ignore "No files available" button
+    application.add_handler(CallbackQueryHandler(lambda update, context: None, pattern=f"^noop$")) # Ignore date label buttons
 
     # Photo handler for thumbnail upload (must come before text handler)
     application.add_handler(MessageHandler(filters.PHOTO, handle_thumbnail_upload))

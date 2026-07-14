@@ -14,6 +14,7 @@ import logging
 import os
 import tempfile
 import threading
+from datetime import date
 
 from config import SETTINGS_FILE
 
@@ -87,7 +88,7 @@ def get_files() -> list:
 
 def add_file(file_id: int, name: str, url: str, thumbnail: str = None) -> bool:
     """Add a file. Returns False if a file with that id already exists.
-    
+
     Args:
         file_id: Unique identifier for the file
         name: Button display name
@@ -99,7 +100,12 @@ def add_file(file_id: int, name: str, url: str, thumbnail: str = None) -> bool:
         files = data.get("files", [])
         if any(f["id"] == file_id for f in files):
             return False
-        file_data = {"id": file_id, "name": name, "url": url}
+        file_data = {
+            "id": file_id,
+            "name": name,
+            "url": url,
+            "upload_date": date.today().strftime("%d %b %Y"),
+        }
         if thumbnail:
             file_data["thumbnail"] = thumbnail
         files.append(file_data)
@@ -110,7 +116,7 @@ def add_file(file_id: int, name: str, url: str, thumbnail: str = None) -> bool:
 
 def edit_file(file_id: int, new_url: str, new_name: str, new_thumbnail: str = None) -> bool:
     """Edit an existing file. Returns False if no matching file was found.
-    
+
     Args:
         file_id: File to edit
         new_url: New download URL
@@ -124,6 +130,7 @@ def edit_file(file_id: int, new_url: str, new_name: str, new_thumbnail: str = No
             if f_item["id"] == file_id:
                 f_item["url"] = new_url
                 f_item["name"] = new_name
+                f_item["upload_date"] = date.today().strftime("%d %b %Y")
                 if new_thumbnail is not None:
                     if new_thumbnail:
                         f_item["thumbnail"] = new_thumbnail
