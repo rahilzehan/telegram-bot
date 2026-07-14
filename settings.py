@@ -222,6 +222,63 @@ def add_channel(channel_id: str, title: str, url: str) -> bool:
         return True
 
 
+# --------------------------------------------------------------------------- #
+# Social link management (developer, official channel, support group)
+# --------------------------------------------------------------------------- #
+def get_developer_url() -> str:
+    """Return the developer Telegram link, or empty string if not set."""
+    return _load().get("developer_url", "")
+
+
+def set_developer_url(url: str) -> None:
+    """Set the developer Telegram link."""
+    _save_value("developer_url", url)
+
+
+def remove_developer_url() -> None:
+    """Remove the developer Telegram link."""
+    with _lock:
+        data = _load()
+        data.pop("developer_url", None)
+        _atomic_write(data)
+
+
+def get_official_channel_url() -> str:
+    """Return the official channel link, or empty string if not set."""
+    return _load().get("official_channel_url", "")
+
+
+def set_official_channel_url(url: str) -> None:
+    """Set the official channel link."""
+    _save_value("official_channel_url", url)
+
+
+def remove_official_channel_url() -> None:
+    """Remove the official channel link."""
+    with _lock:
+        data = _load()
+        data.pop("official_channel_url", None)
+        _atomic_write(data)
+
+
+def get_support_group_url() -> str:
+    """Return the support group link, or empty string if not set."""
+    return _load().get("support_group_url", "")
+
+
+def set_support_group_url(url: str) -> None:
+    """Set the support group link."""
+    _save_value("support_group_url", url)
+
+
+def remove_support_group_url() -> None:
+    """Remove the support group link."""
+    with _lock:
+        data = _load()
+        data.pop("support_group_url", None)
+        _atomic_write(data)
+
+
 def remove_channel(channel_id: str) -> bool:
     """Remove a channel by id, @username, or invite link.
 

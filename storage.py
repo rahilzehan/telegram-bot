@@ -24,6 +24,7 @@ import logging
 import os
 import tempfile
 import threading
+from collections import Counter
 from datetime import datetime, timezone
 
 from config import ADMIN_IDS, STATS_FILE, USERS_FILE
@@ -290,23 +291,15 @@ def set_referrer(telegram_id: int, referred_by: int) -> bool:
 
 def get_top_referrers(limit: int = 10) -> list:
     """Return top referrers as list of (user_id, count) tuples.
-    
+
     Only includes users who have made successful referrals.
     """
     users = _load_users()
-    referrer_counts = {}
-    
-    for user in users:
-        if user.get("referred_by") and user.get("verified"):
-            referrer_id = user["referred_by"]
-            referrer_counts[referrer_id] = referrer_counts.get(referrer_id, 0) + 1
-    
-    # Sort by count descending, then by user_id for consistency
-    sorted_referrers = sorted(
-        referrer_counts.items(),
-        key=lambda x: (-x[1], x[0])
-    )
-    return sorted_referrers[:limit]
+    # ponytail: Counter is smaller and clearer than manual dict
+    counter = Counter(u["referred_by"] for u in users
+                      if u.get("referred_by") and u.get("verified"))
+    # Sort by count desc, then user_id asc for stable tie-breaking
+    return sorted(counter.items(), key=lambda x: (-x[1], x[0]))[:limit]
 
 
 def reset_referral_for_user(telegram_id: int) -> bool:

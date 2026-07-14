@@ -12,6 +12,7 @@ immediately, without editing code or restarting the bot.
 
 import asyncio
 from datetime import datetime
+import html
 import logging
 
 from telegram import (
@@ -35,10 +36,19 @@ from settings import (
     add_file,
     edit_file,
     get_channels,
+    get_developer_url,
     get_files,
+    get_official_channel_url,
+    get_support_group_url,
     remove_channel,
     remove_file,
+    remove_developer_url,
+    remove_official_channel_url,
+    remove_support_group_url,
+    set_developer_url,
     set_file_thumbnail,
+    set_official_channel_url,
+    set_support_group_url,
 )
 from storage import (
     add_admin,
@@ -48,7 +58,6 @@ from storage import (
     count_verified_users,
     get_admins,
     get_referral_count,
-    get_referrer,
     get_top_referrers,
     is_admin,
     record_unlock_request,
@@ -190,13 +199,21 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     
     # Create keyboard with join/verify buttons plus support links
     keyboard = [list(row) for row in join_channels_keyboard().inline_keyboard]
-    keyboard.append([
-        InlineKeyboardButton("👨‍💻 Developer", url="https://t.me/Will_byers07"),
-        InlineKeyboardButton("📢 Official Channel", url="https://t.me/zxeralikebotbywilliam07"),
-    ])
-    keyboard.append([
-        InlineKeyboardButton("💬 Support Group", url="https://t.me/likebotbyzxera"),
-    ])
+
+    dev_url = get_developer_url()
+    off_url = get_official_channel_url()
+    sup_url = get_support_group_url()
+
+    row2 = []
+    if dev_url:
+        row2.append(InlineKeyboardButton("👨‍💻 Developer", url=dev_url))
+    if off_url:
+        row2.append(InlineKeyboardButton("📢 Official Channel", url=off_url))
+    if row2:
+        keyboard.append(row2)
+    if sup_url:
+        keyboard.append([InlineKeyboardButton("💬 Support Group", url=sup_url)])
+
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await update.message.reply_text(
@@ -212,10 +229,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if not user:
         return
 
-    user_data = await get_user_data(user.id)
-    if not user_data:
-        upsert_user(user.id, user.username, user.first_name)
-        user_data = await get_user_data(user.id)
+    # Ensure user exists and get stored record
+    stored = upsert_user(user.id, user.username, user.first_name)
 
     # Get dynamic data
     total_files = len(get_files())
@@ -229,9 +244,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     telegram_id = user.id
     telegram_username = user.username.replace("_", "\\_") if user.username else "N/A"
     display_name = user.first_name if user.first_name else "N/A"
-    verification_status = "Verified ✅" if user_data.get("verified") else "Not Verified ❌"
-    join_date = datetime.fromisoformat(user_data["first_seen"]).strftime("%Y-%m-%d %H:%M:%S") if user_data.get("first_seen") else "N/A"
-    last_activity = datetime.fromisoformat(user_data["last_seen"]).strftime("%Y-%m-%d %H:%M:%S") if user_data.get("last_seen") else "N/A"
+    verification_status = "Verified ✅" if stored.get("verified") else "Not Verified ❌"
+    join_date = datetime.fromisoformat(stored["first_seen"]).strftime("%Y-%m-%d %H:%M:%S") if stored.get("first_seen") else "N/A"
+    last_activity = datetime.fromisoformat(stored["last_seen"]).strftime("%Y-%m-%d %H:%M:%S") if stored.get("last_seen") else "N/A"
 
     # FAQ Answers
     faq_verification_failed = "If verification failed, ensure you have joined all required channels and try again. Sometimes, Telegram delays update. Please wait a few minutes before trying again."
@@ -305,12 +320,16 @@ Support Group: https://t.me/likebotbyzxera
 """
 
     # Inline buttons
+    sup_url = get_support_group_url()
     keyboard = [
         [InlineKeyboardButton("📂 Files", callback_data="user_files")],
         [InlineKeyboardButton("📢 Channels", callback_data="user_channels")],
-        [InlineKeyboardButton("📞 Support", url="https://t.me/likebotbyzxera"),
-         InlineKeyboardButton("📖 Guide", callback_data="how_to_use")],
     ]
+    row = []
+    if sup_url:
+        row.append(InlineKeyboardButton("📞 Support", url=sup_url))
+    row.append(InlineKeyboardButton("📖 Guide", callback_data="how_to_use"))
+    keyboard.append(row)
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     await update.message.reply_text(
@@ -514,10 +533,7 @@ async def listfiles(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     lines = []
     for file in files:
         # HTML escape the file name to handle special characters safely
-        escaped_name = (file['name']
-                       .replace('&', '&')
-                       .replace('<', '<')
-                       .replace('>', '>'))
+        escaped_name = html.escape(file['name'], quote=False)
         line = f"{file['id']}. {escaped_name}"
         if file.get('thumbnail'):
             line += " 🖼️"
@@ -646,20 +662,97 @@ async def listchannels(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     lines = []
     for i, ch in enumerate(channels, start=1):
         # HTML escape the channel title and URL to handle special characters safely
-        escaped_title = (ch['title']
-                        .replace('&', '&')
-                        .replace('<', '<')
-                        .replace('>', '>'))
-        escaped_url = (ch['url']
-                      .replace('&', '&')
-                      .replace('<', '<')
-                      .replace('>', '>'))
+        escaped_title = html.escape(ch['title'], quote=False)
+        escaped_url = html.escape(ch['url'], quote=False)
         line = f"{i}. <b>{escaped_title}</b> - <code>{ch['id']}</code>\n   {escaped_url}"
         lines.append(line)
     await update.message.reply_text(
         "📋 <b>Required Channels</b>\n\n" + "\n".join(lines),
         parse_mode=ParseMode.HTML,
     )
+
+
+# --------------------------------------------------------------------------- #
+# Admin handlers - social link management
+# --------------------------------------------------------------------------- #
+async def setdeveloper(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/setdeveloper <telegram_link|@username> - Set the Developer button link."""
+    if not _is_admin(update):
+        return await _deny(update)
+    if not context.args:
+        await update.message.reply_text(
+            "Usage: /setdeveloper <telegram_link|@username>\n"
+            "Example: /setdeveloper https://t.me/username\n"
+            "         /setdeveloper @username"
+        )
+        return
+    raw = context.args[0]
+    if raw.startswith("http://") or raw.startswith("https://"):
+        url = raw
+    else:
+        username = raw.lstrip("@")
+        url = f"https://t.me/{username}"
+    set_developer_url(url)
+    await update.message.reply_text("✅ Developer button link set successfully.")
+
+
+async def removedeveloper(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/removedeveloper - Remove the Developer button."""
+    if not _is_admin(update):
+        return await _deny(update)
+    remove_developer_url()
+    await update.message.reply_text("✅ Developer button removed successfully.")
+
+
+async def setofficial(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/setofficial <telegram_link> - Set the Official Channel button link."""
+    if not _is_admin(update):
+        return await _deny(update)
+    if not context.args:
+        await update.message.reply_text(
+            "Usage: /setofficial <telegram_link>\n"
+            "Example: /setofficial https://t.me/channel"
+        )
+        return
+    set_official_channel_url(context.args[0])
+    await update.message.reply_text("✅ Official Channel button link set successfully.")
+
+
+async def removeofficial(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/removeofficial - Remove the Official Channel button."""
+    if not _is_admin(update):
+        return await _deny(update)
+    remove_official_channel_url()
+    await update.message.reply_text("✅ Official Channel button removed successfully.")
+
+
+async def setsupport(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/setsupport <telegram_link|@username> - Set the Support Group button link."""
+    if not _is_admin(update):
+        return await _deny(update)
+    if not context.args:
+        await update.message.reply_text(
+            "Usage: /setsupport <telegram_link|@username>\n"
+            "Example: /setsupport https://t.me/group\n"
+            "         /setsupport @username"
+        )
+        return
+    raw = context.args[0]
+    if raw.startswith("http://") or raw.startswith("https://"):
+        url = raw
+    else:
+        username = raw.lstrip("@")
+        url = f"https://t.me/{username}"
+    set_support_group_url(url)
+    await update.message.reply_text("✅ Support Group button link set successfully.")
+
+
+async def removesupport(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/removesupport - Remove the Support Group button."""
+    if not _is_admin(update):
+        return await _deny(update)
+    remove_support_group_url()
+    await update.message.reply_text("✅ Support Group button removed successfully.")
 
 
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -883,6 +976,13 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("addchannel", addchannel))
     application.add_handler(CommandHandler("removechannel", removechannel))
     application.add_handler(CommandHandler("listchannels", listchannels))
+    # Social link admin commands.
+    application.add_handler(CommandHandler("setdeveloper", setdeveloper))
+    application.add_handler(CommandHandler("removedeveloper", removedeveloper))
+    application.add_handler(CommandHandler("setofficial", setofficial))
+    application.add_handler(CommandHandler("removeofficial", removeofficial))
+    application.add_handler(CommandHandler("setsupport", setsupport))
+    application.add_handler(CommandHandler("removesupport", removesupport))
     application.add_handler(CommandHandler("stats", stats))
     # Admin management commands.
     application.add_handler(CommandHandler("addadmin", addadmin))
